@@ -44,7 +44,7 @@ class AEBSVideoDataset(Dataset):
             self.image_sequences = []
             self.distance_sequences = []
             # create 10 random sequences with length of 64
-            for _ in range(10):
+            for _ in range(50):
                 ## first randomly choose max distance and min distance
                 while True:
                     max_distance = random.uniform(30.0, 60.0)
