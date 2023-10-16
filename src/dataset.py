@@ -5,6 +5,7 @@ import pandas as pd
 from torchvision import transforms
 import random
 from PIL import Image
+from torchvision.utils import save_image
 
 class AEBSVideoDataset(Dataset):
     def __init__(self, data_dir="data/aebs", seq_len=64, image_size=32, distance_ub=60.0, random_seed=533):
@@ -28,6 +29,9 @@ class AEBSVideoDataset(Dataset):
 
     def build_dataset(self, data_dir):
 
+        self.image_sequences = []
+        self.distance_sequences = []
+
         for sequence_dir in os.listdir(data_dir):
             sequence_path = os.path.join(data_dir, sequence_dir)
             if not os.path.isdir(sequence_path):
@@ -41,9 +45,16 @@ class AEBSVideoDataset(Dataset):
             distances = distances[valid_indices]
             image_paths = [os.path.join(sequence_path, image_path) for image_path in image_paths[valid_indices]]
 
-            self.image_sequences = []
-            self.distance_sequences = []
-            # create 10 random sequences with length of 64
+            images = []
+            for file_path in image_paths:
+                assert os.path.exists(file_path), f"{file_path} does not exist"
+                image = Image.open(file_path).convert("RGB")
+                image = image.crop((250, 250, 550, 550))
+                image = self.transform(image)
+                images.append(image)
+            images = torch.stack(images, dim=0).type(torch.float32)
+
+            # create 50 random sequences with length of 64
             for _ in range(50):
                 ## first randomly choose max distance and min distance
                 while True:
@@ -51,7 +62,7 @@ class AEBSVideoDataset(Dataset):
                     min_distance = random.uniform(0.0, max_distance - 20.0)
                     valid_indices = ((distances <= max_distance) & (distances >= min_distance)).nonzero().squeeze()
                     sub_distances = distances[valid_indices]
-                    sub_image_paths = [image_paths[idx] for idx in valid_indices]
+                    sub_images = images[valid_indices]
                     if len(sub_distances) >= self.seq_len:
                         break
                 
@@ -60,20 +71,11 @@ class AEBSVideoDataset(Dataset):
                     random_idx.sort()
                     seq_distances = sub_distances[random_idx].type(torch.float32)
                     diff = seq_distances[1:] - seq_distances[:-1]
-                    seq_image_path = [sub_image_paths[idx] for idx in random_idx]
+                    seq_image = sub_images[random_idx].type(torch.float32)
                     if (diff >= -3.0).all():
                         break
-
-                image_sequence = []
-                for file_path in seq_image_path:
-                    assert os.path.exists(file_path), f"{file_path} does not exist"
-                    image = Image.open(file_path).convert("RGB")
-                    image = image.crop((250, 250, 550, 550))
-                    image = self.transform(image)
-                    image_sequence.append(image)
-                image_sequence = torch.stack(image_sequence, dim=0).type(torch.float32)
                 
-                self.image_sequences.append(image_sequence)
+                self.image_sequences.append(seq_image)
                 self.distance_sequences.append(seq_distances)
 
     def __len__(self):
@@ -100,7 +102,9 @@ class DummyDataset(Dataset):
 if __name__ == "__main__":
     dataset = AEBSVideoDataset()
     dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
+    print(len(dataset))
 
     iterator = iter(dataloader)
     images, distances = next(iterator)
     print(images.shape, distances.shape)
+    save_image(images[0], "test.png", nrow=8, normalize=True)
